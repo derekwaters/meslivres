@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { authors, bookAuthors, books, readingRecords } from "@/db/schema";
 import { AddBookButton } from "@/components/AddBookButton";
 import { FinishReadingButton } from "@/components/FinishReadingButton";
+import { ReadingHistoryTable, type FinishedBook } from "@/components/ReadingHistoryTable";
 
 export default async function Home() {
   const { userId } = await auth();
@@ -19,6 +20,7 @@ export default async function Home() {
 
   const [
     currentlyReading,
+    finishedRecords,
     [{ finishedCount }],
     [{ readingCount }],
     [{ avgPagesPerDay }],
@@ -30,6 +32,23 @@ export default async function Home() {
         isNotNull(readingRecords.readStarted),
         isNull(readingRecords.readEnded)
       ),
+      with: {
+        book: {
+          with: {
+            bookAuthors: {
+              with: { author: true },
+              orderBy: (ba, { asc }) => [asc(ba.authorOrder)],
+            },
+          },
+        },
+      },
+    }),
+    db.query.readingRecords.findMany({
+      where: and(
+        eq(readingRecords.clerkUserId, userId),
+        isNotNull(readingRecords.readEnded)
+      ),
+      orderBy: (rr, { desc }) => [desc(rr.readEnded)],
       with: {
         book: {
           with: {
@@ -94,6 +113,15 @@ export default async function Home() {
   const mostReadAuthors = [...authorStatsRaw]
     .sort((a, b) => b.readCount - a.readCount)
     .slice(0, 5);
+
+  const finishedBooks: FinishedBook[] = finishedRecords.map((r) => ({
+    id: r.id,
+    title: r.book.title,
+    isbn: r.book.isbn,
+    authorNames: r.book.bookAuthors.map((ba) => ba.author.name).join(", "),
+    rating: r.rating,
+    readEnded: r.readEnded!.toISOString(),
+  }));
 
   return (
     <div className="flex flex-col flex-1 bg-zinc-50 dark:bg-zinc-950">
@@ -242,6 +270,13 @@ export default async function Home() {
               )}
             </div>
           </div>
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-widest">
+            Reading History
+          </h2>
+          <ReadingHistoryTable books={finishedBooks} />
         </section>
       </main>
     </div>
